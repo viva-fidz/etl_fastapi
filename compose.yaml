@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: movies_postgres
+    env_file:
+      - ./etl/.env
+    volumes:
+      - ./etl/utils/db_dump.sql:/docker-entrypoint-initdb.d/init_db.sql
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d movies_database" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  elasticsearch:
+    image: elasticsearch:7.17.10
+    container_name: movies_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s && curl -f http://localhost:9200/ || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  etl:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    container_name: movies_etl
+    env_file:
+      - ./etl/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  fastapi-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastapi-app
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app/src
+    depends_on:
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    command: >
+      gunicorn src.main:app
+      -k uvicorn.workers.UvicornWorker
+      -w ${GUNICORN_WORKERS:-2}
+      -b 0.0.0.0:8000
+      --timeout ${GUNICORN_TIMEOUT:-65}
+      --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT:-30}
+      --keep-alive ${GUNICORN_KEEPALIVE:-65}
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    container_name: movies_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - fastapi-app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  es_data:

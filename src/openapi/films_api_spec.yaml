@@ -1,0 +1,292 @@
+openapi: 3.0.3
+info:
+  title: API Фильмов
+  version: 1.0.0
+  description: API для получения информации о фильмах, включая поиск и пагинацию.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Локальный сервер разработки
+tags:
+  - name: Фильмы
+    description: Получение списков фильмов
+  - name: Фильм
+    description: Детальная информация о фильме
+  - name: Полнотекстовый поиск
+    description: Поиск по названию и описанию фильмов
+
+paths:
+  /films:
+    get:
+      summary: Все фильмы
+      operationId: films_list
+      description: Получить список всех фильмов с пагинацией и фильтрацией
+      tags:
+        - Фильмы
+      parameters:
+        - name: sort
+          in: query
+          description: Поле для сортировки
+          required: false
+          schema:
+            type: string
+            default: -imdb_rating
+        - name: page_size
+          in: query
+          description: Количество элементов на странице
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: page_number
+          in: query
+          description: Номер страницы
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+      responses:
+        "200":
+          description: Список отсортированных фильмов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FilmListItem'
+        "422":
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /films/search:
+    get:
+      summary: Поиск фильмов
+      operationId: search_films
+      description: Поиск фильмов по названию или описанию с пагинацией и сортировкой
+      tags:
+        - Полнотекстовый поиск
+      parameters:
+        - name: query
+          in: query
+          description: Поисковый запрос
+          required: true
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Поле для сортировки
+          required: false
+          schema:
+            type: string
+            default: -imdb_rating
+        - name: page_size
+          in: query
+          description: Количество элементов на странице
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: page_number
+          in: query
+          description: Номер страницы
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+      responses:
+        "200":
+          description: Список найденных фильмов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FilmSearchListItem'
+        "422":
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /films/{film_id}:
+    get:
+      summary: Детали фильма
+      operationId: film_details
+      description: Получить полную информацию о фильме по UUID
+      tags:
+        - Фильм
+      parameters:
+        - name: film_id
+          in: path
+          description: UUID фильма
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Полная информация о фильме
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Film'
+        "404":
+          description: Фильм не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundResponse'
+              example:
+                detail: film not found
+        "422":
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+components:
+  schemas:
+
+    FilmListItem:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Уникальный идентификатор фильма
+        title:
+          type: string
+          description: Название фильма
+        imdb_rating:
+          type: number
+          format: float
+          nullable: true
+          description: Рейтинг IMDB (может отсутствовать)
+      required:
+        - uuid
+        - title
+
+    FilmSearchListItem:
+      allOf:
+        - $ref: '#/components/schemas/FilmListItem'
+
+    Film:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Уникальный идентификатор фильма
+        title:
+          type: string
+          description: Название фильма
+        description:
+          type: string
+          description: Полное описание фильма
+        imdb_rating:
+          type: number
+          format: float
+          nullable: true
+          description: Рейтинг IMDB
+        type:
+          type: string
+          description: Тип контента
+        genres:
+          type: array
+          description: Список жанров
+          items:
+            $ref: '#/components/schemas/Genre'
+        actors:
+          type: array
+          description: Актеры
+          items:
+            $ref: '#/components/schemas/Person'
+        writers:
+          type: array
+          description: Сценаристы
+          items:
+            $ref: '#/components/schemas/Person'
+        directors:
+          type: array
+          description: Режиссеры
+          items:
+            $ref: '#/components/schemas/Person'
+      required:
+        - uuid
+        - title
+        - description
+
+    Person:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+      required:
+        - uuid
+        - full_name
+
+    Genre:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+        - uuid
+        - name
+
+    # Стандартные модели ошибок
+
+    NotFoundResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Сообщение об ошибке (например, 'film not found')
+      required:
+        - detail
+
+    ValidationError:
+      title: ValidationError
+      type: object
+      properties:
+        loc:
+          title: Location
+          type: array
+          items:
+            type: string
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+        - loc
+        - msg
+        - type
+
+    HTTPValidationError:
+      title: HTTPValidationError
+      type: object
+      properties:
+        detail:
+          title: Detail
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
